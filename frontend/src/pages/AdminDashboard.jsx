@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Container, Row, Col, Form, Button, Table, Alert, Spinner, Card, Modal } from 'react-bootstrap';
-import api from '../services/api'; // Configuración de Axios para peticiones al backend
+import api from '../services/api';
 
 function AdminDashboard() {
     const [empleados, setEmpleados] = useState([]);
@@ -16,15 +16,33 @@ function AdminDashboard() {
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const [saldo, setSaldo] = useState(0);
+    const [saldoTotal, setSaldoTotal] = useState(0);
     const [showModal, setShowModal] = useState(false);
     const [empleadoAEliminar, setEmpleadoAEliminar] = useState(null);
     const [nombreConfirmacion, setNombreConfirmacion] = useState('');
+
+    useEffect(() => {
+        if (error || success) {
+            const timer = setTimeout(() => {
+                setError('');
+                setSuccess('');
+            }, 30000);
+            return () => clearTimeout(timer);
+        }
+    }, [error, success]);
 
     const fetchEmpleados = async () => {
         setIsLoading(true);
         try {
             const response = await api.get('/empleados');
             setEmpleados(response.data);
+
+            let total = 0;
+            for (const empleado of response.data) {
+                const transaccionesEmpleado = await api.get(`/transacciones/${empleado._id}`);
+                total += transaccionesEmpleado.data.reduce((acc, transaccion) => acc + transaccion.monto, 0);
+            }
+            setSaldoTotal(total);
         } catch (error) {
             console.error('Error al obtener empleados:', error);
             setError('No se pudo cargar la lista de empleados.');
@@ -52,12 +70,6 @@ function AdminDashboard() {
         }
     };
 
-    const handleSelectEmpleado = (empleado) => {
-        setEmpleadoSeleccionado(empleado);
-        setTransacciones([]);
-        fetchTransacciones(empleado._id);
-    };
-
     const handleAddEmpleado = async (e) => {
         e.preventDefault();
         setError('');
@@ -73,33 +85,30 @@ function AdminDashboard() {
             fetchEmpleados();
             setNombre('');
             setApellido('');
-            clearNotification();
         } catch (error) {
             console.error('Error al agregar empleado:', error);
             setError('No se pudo agregar el empleado.');
-            clearNotification();
         }
     };
 
     const handleDeleteEmpleado = async () => {
         if (nombreConfirmacion !== `${empleadoAEliminar.nombre} ${empleadoAEliminar.apellido}`) {
             setError('El nombre ingresado no coincide.');
-            clearNotification();
             return;
         }
 
         try {
+            await api.delete(`/transacciones/${empleadoAEliminar._id}`);
             await api.delete(`/empleados/${empleadoAEliminar._id}`);
+
             setSuccess(`Empleado ${empleadoAEliminar.nombre} eliminado correctamente.`);
             setShowModal(false);
             fetchEmpleados();
             setEmpleadoAEliminar(null);
             setNombreConfirmacion('');
-            clearNotification();
         } catch (error) {
             console.error('Error al eliminar empleado:', error);
             setError('No se pudo eliminar el empleado.');
-            clearNotification();
         }
     };
 
@@ -109,9 +118,11 @@ function AdminDashboard() {
         setSuccess('');
         if (!tipo || !descripcion || !monto || !fecha) {
             setError('Por favor, completa todos los campos.');
-            clearNotification();
             return;
         }
+
+        const fechaAjustada = new Date(fecha);
+        fechaAjustada.setMinutes(fechaAjustada.getMinutes() + fechaAjustada.getTimezoneOffset());
 
         const montoFinal = ['Faltante', 'Préstamo'].includes(tipo) ? -Math.abs(Number(monto)) : Math.abs(Number(monto));
 
@@ -121,42 +132,36 @@ function AdminDashboard() {
                 tipo,
                 descripcion,
                 monto: montoFinal,
-                fecha,
+                fecha: fechaAjustada.toISOString(),
             });
             setSuccess('Transacción registrada correctamente.');
             fetchTransacciones(empleadoSeleccionado._id);
+            fetchEmpleados();
             setTipo('');
             setDescripcion('');
             setMonto('');
             setFecha('');
-            clearNotification();
         } catch (error) {
             console.error('Error al registrar transacción:', error);
             setError('No se pudo registrar la transacción.');
-            clearNotification();
         }
     };
 
     const handleDeleteTransaccion = async (transaccionId) => {
-        setError('');
-        setSuccess('');
         try {
             await api.delete(`/transacciones/${transaccionId}`);
             setSuccess('Transacción eliminada correctamente.');
             fetchTransacciones(empleadoSeleccionado._id);
-            clearNotification();
+            fetchEmpleados();
         } catch (error) {
             console.error('Error al eliminar transacción:', error);
             setError('No se pudo eliminar la transacción.');
-            clearNotification();
         }
     };
 
-    const clearNotification = () => {
-        setTimeout(() => {
-            setError('');
-            setSuccess('');
-        }, 30000); // 30 segundos
+    const handleSelectEmpleado = (empleado) => {
+        setEmpleadoSeleccionado(empleado);
+        fetchTransacciones(empleado._id);
     };
 
     const formatNumber = (num) => new Intl.NumberFormat('es-MX', { minimumFractionDigits: 2 }).format(num);
@@ -167,7 +172,11 @@ function AdminDashboard() {
 
     return (
         <Container fluid className="mt-5">
-            <h1 className="text-center mb-4">Panel de Administración</h1>
+            <Row className="mb-4">
+                <Col className="text-center">
+                    <h3>Deuda Total: <strong>${formatNumber(saldoTotal)}</strong></h3>
+                </Col>
+            </Row>
 
             {error && <Alert variant="danger">{error}</Alert>}
             {success && <Alert variant="success">{success}</Alert>}
@@ -334,9 +343,7 @@ function AdminDashboard() {
                                                     <tr key={transaccion._id}>
                                                         <td>{index + 1}</td>
                                                         <td>{transaccion.tipo}</td>
-                                                        <td className="text-truncate" style={{ maxWidth: '150px' }}>
-                                                            {transaccion.descripcion}
-                                                        </td>
+                                                        <td>{transaccion.descripcion}</td>
                                                         <td>${formatNumber(transaccion.monto)}</td>
                                                         <td>{new Date(transaccion.fecha).toLocaleDateString()}</td>
                                                         <td>
