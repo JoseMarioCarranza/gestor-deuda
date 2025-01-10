@@ -124,7 +124,7 @@ function AdminDashboard() {
         const fechaAjustada = new Date(fecha);
         fechaAjustada.setMinutes(fechaAjustada.getMinutes() + fechaAjustada.getTimezoneOffset());
 
-        const montoFinal = ['Faltante', 'Préstamo'].includes(tipo) ? -Math.abs(Number(monto)) : Math.abs(Number(monto));
+        const montoFinal = ['Abono', 'Sobrante'].includes(tipo) ? -Math.abs(Number(monto)) : Math.abs(Number(monto));
 
         try {
             await api.post('/transacciones', {
@@ -285,7 +285,7 @@ function AdminDashboard() {
                                                             onChange={(e) => setTipo(e.target.value)}
                                                         >
                                                             <option value="">Selecciona un tipo</option>
-                                                            <option value="Deuda a favor">Deuda a favor</option>
+                                                            <option value="Sobrante">Sobrante</option>
                                                             <option value="Faltante">Faltante</option>
                                                             <option value="Abono">Abono</option>
                                                             <option value="Préstamo">Préstamo</option>
